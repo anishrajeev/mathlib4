@@ -97,4 +97,6 @@ instance : CompactSpace (T.CompleteType α) := by
 
 instance : BaireSpace (T.CompleteType α) := BaireSpace.of_t2Space_locallyCompactSpace
 
+--canvas
+
 end CompleteType
