@@ -126,13 +126,13 @@ def replace_with_constant (φ : L'[[Fin 1]].Sentence) (c : ℕ) : L'[[Fin 1]].Se
   replace φ := BoundedFormula.subst φ (fun _ => Constants.term (Sum.inr c)) (β := Fin 1)
   exact Formula.equivSentence.1 φ
 
-def henkin_enumeration (φ : L[[Fin 1]].Sentence) : Set ((T').CompleteType (Fin 1)) := by
+def henkin_theory (φ : L[[Fin 1]].Sentence) : Set ((T').CompleteType (Fin 1)) := by
   replace φ : L'[[Fin 1]].Sentence := (toL'.addConstants (L := L) (Fin 1)).onSentence φ
   have φe : L'[[Fin 1]].Sentence := existential_of_formula φ
   exact {p : (T').CompleteType (Fin 1) | φe ∈ p → ∃ c : ℕ, replace_with_constant φ c ∈ p}
 
 def henkin_dense : ∀ φ : L[[Fin 1]].Sentence,
-                    Dense (X := (T').CompleteType (Fin 1)) (henkin_enumeration φ) := by
+                    Dense (X := (T').CompleteType (Fin 1)) (henkin_theory φ) := by
   intro φ
   let φ' := existential_of_formula ((toL'.addConstants (L := L) (Fin 1)).onSentence φ)
   rw[IsTopologicalBasis.dense_iff typesWith_basis]
