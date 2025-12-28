@@ -13,6 +13,8 @@ public import Mathlib.Topology.Compactness.Compact
 public import Mathlib.Topology.Connected.Separation
 public import Mathlib.Topology.Baire.LocallyCompactRegular
 
+
+public import Mathlib.Data.Finset.Insert
 /-!
 # Topology on the space of complete types
 
@@ -97,6 +99,85 @@ instance : CompactSpace (T.CompleteType α) := by
 
 instance : BaireSpace (T.CompleteType α) := BaireSpace.of_t2Space_locallyCompactSpace
 
---canvas
+/- Next steps in proving Omitting Types Theorem
+   Based on the proof in Poizat's Model Theory textbook
+-/
+
+def countable_language (L : Language) : Prop :=
+          ∀ n : ℕ, Countable (L.Functions n) ∧ Countable (L.Relations n)
+
+def omits_type (M : T.ModelType) (p : T.CompleteType α) : Prop := p ∉ T.realizedTypes (α := α) M
+
+abbrev ExpandedLanguage := L[[ℕ]]
+local notation "L'" => @ExpandedLanguage L
+def toL' : L →ᴸ L' := L.lhomWithConstants ℕ
+local notation "T'" => toL'.onTheory T
+
+/- TODO: Make the set of constants from Fin 1 to Fin n -/
+
+noncomputable def existential_of_formula (φ : L'[[Fin 1]].Sentence) : L'[[Fin 1]].Sentence := by
+  replace φ := ((L').lhomWithConstantsMap (fun i ↦ Sum.inr i) (β := Empty ⊕ (Fin 1))).onSentence φ
+  replace φ := Formula.equivSentence.2 φ
+  replace φ := Formula.iExs (α := Empty) (β := Fin 1) (L := L') φ
+  exact ((L').lhomWithConstants (Fin 1)).onSentence φ
+
+def replace_with_constant (φ : L'[[Fin 1]].Sentence) (c : ℕ) : L'[[Fin 1]].Sentence := by
+  replace φ := Formula.equivSentence.2 φ
+  replace φ := BoundedFormula.subst φ (fun _ => Constants.term (Sum.inr c)) (β := Fin 1)
+  exact Formula.equivSentence.1 φ
+
+def henkin_enumeration (φ : L[[Fin 1]].Sentence) : Set ((T').CompleteType (Fin 1)) := by
+  replace φ : L'[[Fin 1]].Sentence := (toL'.addConstants (L := L) (Fin 1)).onSentence φ
+  have φe : L'[[Fin 1]].Sentence := existential_of_formula φ
+  exact {p : (T').CompleteType (Fin 1) | φe ∈ p → ∃ c : ℕ, replace_with_constant φ c ∈ p}
+
+def henkin_dense : ∀ φ : L[[Fin 1]].Sentence,
+                    Dense (X := (T').CompleteType (Fin 1)) (henkin_enumeration φ) := by
+  intro φ
+  let φ' := existential_of_formula ((toL'.addConstants (L := L) (Fin 1)).onSentence φ)
+  rw[IsTopologicalBasis.dense_iff typesWith_basis]
+  intro o hne ⟨p, hp⟩
+  obtain ⟨ψ, rfl⟩ := hne
+  let T'' := (((L').lhomWithConstants (Fin 1)).onTheory T')
+  -- Case on whether ψ and φ' are consistent together
+  by_cases h' : ({ψ, φ'} ∪ T'').IsSatisfiable
+  /-
+  This case is complicated, as I'm (pretty sure at least) that I have to find a fresh constant from
+  ℕ (call it c) not used in φ' or ψ, and then redefine the model M got from h' to interpret c as x
+  (where x is the value in the universe that satisfies the existential φ') and then show that
+  {ψ, φ'} ∪ T'' is satisfied by this new model, and then finally get the complete type from it
+  -/
+  · obtain ⟨M⟩ := h'
+    have h_ex : M ⊨ φ' := by
+      have := M.is_model; simp at this
+      exact this φ' (Or.inl (Or.inr (refl φ')))
+    dsimp [φ', existential_of_formula] at h_ex
+    have := LHom.realize_onSentence M.Carrier ((L').lhomWithConstants (Fin 1)) (Formula.iExs (Fin 1)
+      (Formula.equivSentence.symm
+        ((ExpandedLanguage.lhomWithConstantsMap fun i ↦ Sum.inr i).onSentence
+          ((LHom.addConstants (Fin 1) toL').onSentence φ))))
+    rw[this, Sentence.Realize, Formula.realize_iExs] at h_ex; clear this
+    obtain ⟨x, hx⟩ := h_ex
+    sorry
+    -- If it is not consistent, this is the easy case since the implication is vacously true
+  · use p
+    rw[Set.mem_inter_iff]
+    constructor
+    · assumption
+    · intro h; exfalso
+      have subset : ({ψ, φ'} ∪ T'') ⊆ p := by
+        intro x hx
+        rw[Set.mem_union] at hx
+        simp at hx
+        rcases hx with (hx | hx) | hx
+        · rw[hx]
+          exact hp
+        · rw[hx]
+          exact h
+        · exact (p.subset) hx
+      have p_inconsistent : ¬p.toTheory.IsSatisfiable := by
+        intro x; exact h' (IsSatisfiable.mono x subset)
+      exact p_inconsistent (p.isMaximal.1)
+
 
 end CompleteType
