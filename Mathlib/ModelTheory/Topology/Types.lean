@@ -121,18 +121,115 @@ noncomputable def existential_of_formula (φ : L'[[Fin 1]].Sentence) : L'[[Fin 1
   replace φ := Formula.iExs (α := Empty) (β := Fin 1) (L := L') φ
   exact ((L').lhomWithConstants (Fin 1)).onSentence φ
 
-def replace_with_constant (φ : L'[[Fin 1]].Sentence) (c : ℕ) : L'[[Fin 1]].Sentence := by
-  replace φ := Formula.equivSentence.2 φ
-  replace φ := BoundedFormula.subst φ (fun _ => Constants.term (Sum.inr c)) (β := Fin 1)
-  exact Formula.equivSentence.1 φ
+def replace_with_constant (φ : L'[[Fin 1]].Sentence) (c : Fin 1 → ℕ) : (L').Sentence :=
+  (Formula.equivSentence.2 φ).subst (β := Empty) (fun i ↦ Constants.term (Sum.inr (c i)))
 
-def henkin_theory (φ : L[[Fin 1]].Sentence) : Set ((T').CompleteType (Fin 1)) := by
+def henkinTheory (φ : L[[Fin 1]].Sentence) : Set ((T').CompleteType (Fin 1)) := by
   replace φ : L'[[Fin 1]].Sentence := (toL'.addConstants (L := L) (Fin 1)).onSentence φ
   have φe : L'[[Fin 1]].Sentence := existential_of_formula φ
-  exact {p : (T').CompleteType (Fin 1) | φe ∈ p → ∃ c : ℕ, replace_with_constant φ c ∈ p}
+  exact { p : (T').CompleteType (Fin 1) | φe ∈ p →
+        ∃ c : (Fin 1 → ℕ), ((L').lhomWithConstants (Fin 1)).onSentence
+              (replace_with_constant φ c) ∈ p }
 
-def henkin_dense : ∀ φ : L[[Fin 1]].Sentence,
-                    Dense (X := (T').CompleteType (Fin 1)) (henkin_theory φ) := by
+def constantsIn_term {α : Type*} (t : L'[[Fin 1]].Term α) : Finset ℕ :=
+  match t with
+  | var _ => {}
+  | func (l := l) sym ts =>
+    match l, sym with
+    | 0, Sum.inl (Sum.inr c) => {c}
+    | 0, _ => {}
+    | _, _ => Finset.biUnion Finset.univ (fun i ↦ constantsIn_term (ts i))
+
+def constantsIn {α : Type*} {n : ℕ} (φ : L'[[Fin 1]].BoundedFormula α n) : Finset ℕ :=
+  match φ with
+  | BoundedFormula.falsum => {}
+  | BoundedFormula.equal t₁ t₂ => (constantsIn_term t₁) ∪ (constantsIn_term t₂)
+  | BoundedFormula.rel _ ts => Finset.biUnion Finset.univ (fun i ↦ constantsIn_term (ts i))
+  | BoundedFormula.imp f₁ f₂ => (constantsIn f₁) ∪ (constantsIn f₂)
+  | BoundedFormula.all f => constantsIn f
+
+noncomputable def updateConstantInterpretation {M : Type*} (S : L'[[Fin 1]].Structure M)
+  (c : L'[[Fin 1]].Constants) (new_val : M) : L'[[Fin 1]].Structure M :=
+  { S with
+      funMap {n} :=
+        have := Classical.propDecidable
+        match n with
+        | 0 => Function.update S.funMap c (fun _ ↦ new_val)
+        | _ => S.funMap }
+
+lemma coincidence_term {M : Type*} (S : L'[[Fin 1]].Structure M) (t : L'[[Fin 1]].Term (α))
+  (v : α → M) (c : ℕ) (h : c ∉ constantsIn_term t) (new_val : M) :
+  @Term.realize _ _ S _ v t =
+  @Term.realize _ _ (updateConstantInterpretation S (Sum.inl (Sum.inr c)) new_val) _ v t := by
+    let M' := (updateConstantInterpretation S (Sum.inl (Sum.inr c)) new_val)
+    induction t with
+    | var x => simp
+    | func f ts ih =>
+      simp [updateConstantInterpretation]
+      split
+      next =>
+        simp[Function.update_apply]
+        split
+        next hfc =>
+          subst hfc
+          unfold constantsIn_term at h
+          simp at h
+        next hfnc =>
+          congr with i
+          exact i.elim0
+      next _ _ h' =>
+        congr with i; apply ih
+        unfold constantsIn_term at h
+        split at h <;> repeat contradiction
+        · rw[Finset.mem_biUnion] at h
+          push_neg at h
+          exact h i (by simp)
+
+lemma coincidence {n} {M : Type*} (S : L'[[Fin 1]].Structure M) (φ : L'[[Fin 1]].BoundedFormula α n)
+  (c : ℕ) (v : α → M) (xs : Fin n → M) (h : c ∉ constantsIn φ) (new_val : M) :
+  @φ.Realize _ _ S _ _ v xs ↔
+  @φ.Realize _ _ (updateConstantInterpretation S (Sum.inl (Sum.inr c)) new_val) _ _ v xs := by
+    let M' := (updateConstantInterpretation S (Sum.inl (Sum.inr c)) new_val)
+    induction φ with
+    | falsum => simp [BoundedFormula.Realize]
+    | equal t₁ t₂ =>
+      simp[constantsIn] at h
+      have h₁ := coincidence_term S t₁ (Sum.elim v xs) c h.1 new_val
+      have h₂ := coincidence_term S t₂ (Sum.elim v xs) c h.2 new_val
+      simp[BoundedFormula.Realize, h₁, h₂]
+    | rel R ts =>
+      simp[constantsIn] at h
+      simp[BoundedFormula.Realize]
+      have hᵢ : (fun i ↦ @Term.realize _ _ S _ (Sum.elim v xs) (ts i)) =
+               (fun i ↦ @Term.realize _ _ M' _ (Sum.elim v xs) (ts i)) := by
+              have := fun i ↦ coincidence_term S (ts i) (Sum.elim v xs) c (h i) new_val
+              congr with i; exact this i
+      simp[hᵢ, updateConstantInterpretation]
+    | imp f₁ f₂ ih₁ ih₂ =>
+      simp[constantsIn] at h
+      have h₁ := ih₁ xs h.1
+      have h₂ := ih₂ xs h.2
+      simp_rw[BoundedFormula.Realize, h₁, h₂]
+    | all f ih =>
+      simp[constantsIn] at h
+      simp[BoundedFormula.Realize]
+      apply forall_congr'; intro x
+      exact ih (Fin.snoc xs x) h
+
+def Structure.toCompleteType {M : Type*} [L[[α]].Structure M] [Nonempty M]
+    (h : M ⊨ (L.lhomWithConstants α).onTheory T) : T.CompleteType α where
+  toTheory := { φ | M ⊨ φ }
+  subset' := fun φ ↦ fun hφ ↦ h.realize_of_mem φ hφ
+  isMaximal' := by
+    constructor
+    · haveI : M ⊨ { φ | @Sentence.Realize (L[[α]]) M _ φ } := ⟨fun _ hx ↦ hx⟩
+      exact @Model.isSatisfiable (L[[α]]) { φ | M ⊨ φ } M _ _ _
+    · intro φ
+      simp;
+      exact Classical.em (M ⊨ φ)
+
+def henkinDense : ∀ φ : L[[Fin 1]].Sentence,
+                    Dense (X := (T').CompleteType (Fin 1)) (henkinTheory φ) := by
   intro φ
   let φ' := existential_of_formula ((toL'.addConstants (L := L) (Fin 1)).onSentence φ)
   rw[IsTopologicalBasis.dense_iff typesWith_basis]
@@ -141,12 +238,6 @@ def henkin_dense : ∀ φ : L[[Fin 1]].Sentence,
   let T'' := (((L').lhomWithConstants (Fin 1)).onTheory T')
   -- Case on whether ψ and φ' are consistent together
   by_cases h' : ({ψ, φ'} ∪ T'').IsSatisfiable
-  /-
-  This case is complicated, as I'm (pretty sure at least) that I have to find a fresh constant from
-  ℕ (call it c) not used in φ' or ψ, and then redefine the model M got from h' to interpret c as x
-  (where x is the value in the universe that satisfies the existential φ') and then show that
-  {ψ, φ'} ∪ T'' is satisfied by this new model, and then finally get the complete type from it
-  -/
   · obtain ⟨M⟩ := h'
     have h_ex : M ⊨ φ' := by
       have := M.is_model; simp at this
@@ -158,8 +249,59 @@ def henkin_dense : ∀ φ : L[[Fin 1]].Sentence,
           ((LHom.addConstants (Fin 1) toL').onSentence φ))))
     rw[this, Sentence.Realize, Formula.realize_iExs] at h_ex; clear this
     obtain ⟨x, hx⟩ := h_ex
-    sorry
-    -- If it is not consistent, this is the easy case since the implication is vacously true
+    have c := ((constantsIn φ' ∪ constantsIn ψ).max.getD 0) + 1
+    let S' := updateConstantInterpretation M.struc (Sum.inl (Sum.inr c)) (x 0)
+    have hc₁ : c ∉ (constantsIn φ') := sorry
+    have hc₂ : c ∉ (constantsIn ψ) := sorry
+    have hc₃ : ∀ φ ∈ T'', c ∉ (constantsIn φ) := sorry
+    have hM' : @Theory.Model (L'[[Fin 1]]) (M.Carrier) S' ({ψ, φ'} ∪ T'') := by
+      simp; intro φ h_in
+      rcases h_in with ((h | h) | h)
+      · rw[h]
+        have := coincidence M.struc ψ c (default : _ → M) default hc₂ (x 0)
+        have hψ : @Sentence.Realize (L'[[Fin 1]]) (M.Carrier) M.struc ψ := by
+          have := M.is_model; simp at this
+          exact this ψ (Or.inl (Or.inl (refl ψ)))
+        exact this.1 hψ
+      · rw[h]
+        have := coincidence M.struc φ' c (default : _ → M) default hc₁ (x 0)
+        have hφ' : @Sentence.Realize (L'[[Fin 1]]) (M.Carrier) M.struc φ' := by
+          have := M.is_model; simp at this
+          exact this φ' (Or.inl (Or.inr (refl φ')))
+        exact this.1 hφ'
+      · have := coincidence M.struc φ c (default : _ → M) default (hc₃ φ h) (x 0)
+        have hφ : @Sentence.Realize (L'[[Fin 1]]) (M.Carrier) M.struc φ := by
+          have := M.is_model; simp at this
+          exact this φ (Or.inr h)
+        exact this.1 hφ
+    have := ((@Theory.model_union_iff (L'[[Fin 1]]) (M.Carrier) S' {ψ, φ'} T'').1 hM').2
+    let q := Structure.toCompleteType this
+    use q
+    constructor
+    · change ψ ∈ q.toTheory
+      dsimp[q, Structure.toCompleteType]
+      exact hM'.realize_of_mem ψ (by simp)
+    · dsimp[henkinTheory, Structure.toCompleteType]
+      intro _
+      use c
+      change _ ∈ q.toTheory
+      simp[q, Structure.toCompleteType]
+      let lowerStruct : (L').Structure M := ((L').lhomWithConstants (Fin 1)).reduct M
+      haveI := lowerStruct; clear this
+      haveI : (ExpandedLanguage.lhomWithConstants (Fin 1)).IsExpansionOn M :=
+              LHom.isExpansionOn_reduct ((L').lhomWithConstants (Fin 1)) M.Carrier
+      rw[LHom.realize_onSentence M.Carrier
+            ((L').lhomWithConstants (Fin 1))
+            (replace_with_constant ((LHom.addConstants (Fin 1) toL').onSentence φ) ↑c)]
+      rw[Sentence.Realize, Formula.Realize, replace_with_constant, BoundedFormula.realize_subst]
+      simp
+      have := Formula.realize_equivSentence_symm
+              M.Carrier
+              ((LHom.addConstants (Fin 1) toL').onSentence φ)
+              (fun i ↦ (L').constantMap (Sum.inr c))
+      dsimp[Formula.Realize] at this
+      simp[this, Sentence.Realize, Formula.Realize]
+      sorry
   · use p
     rw[Set.mem_inter_iff]
     constructor

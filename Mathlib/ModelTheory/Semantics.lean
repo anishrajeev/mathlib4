@@ -692,6 +692,9 @@ variable {M} (T : L.Theory)
 theorem Theory.model_iff : M ⊨ T ↔ ∀ φ ∈ T, M ⊨ φ :=
   ⟨fun h => h.realize_of_mem, fun h => ⟨h⟩⟩
 
+theorem Theory.model_union_iff (T' : L.Theory) : M ⊨ T ∪ T' ↔ M ⊨ T ∧ M ⊨ T' := by
+  simp only [model_iff, Set.mem_union, or_imp, forall_and]
+
 theorem Theory.realize_sentence_of_mem [M ⊨ T] {φ : L.Sentence} (h : φ ∈ T) : M ⊨ φ :=
   Theory.Model.realize_of_mem φ h
 
@@ -713,10 +716,6 @@ theorem Model.union {T' : L.Theory} (h : M ⊨ T) (h' : M ⊨ T') : M ⊨ T ∪ 
   simp only [model_iff, Set.mem_union] at *
   exact fun φ hφ => hφ.elim (h _) (h' _)
 
-@[simp]
-theorem model_union_iff {T' : L.Theory} : M ⊨ T ∪ T' ↔ M ⊨ T ∧ M ⊨ T' :=
-  ⟨fun h => ⟨h.mono Set.subset_union_left, h.mono Set.subset_union_right⟩, fun h =>
-    h.1.union h.2⟩
 
 @[simp]
 theorem model_singleton_iff {φ : L.Sentence} : M ⊨ ({φ} : L.Theory) ↔ M ⊨ φ := by simp
